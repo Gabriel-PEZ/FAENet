@@ -1,7 +1,8 @@
 # %%
 
-from torch_geometric.datasets import QM9
 from pathlib import Path
+
+from torch_geometric.datasets import QM9
 
 # %%
 
