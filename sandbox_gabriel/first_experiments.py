@@ -1,6 +1,7 @@
 # %%
 from pathlib import Path
 
+import mendeleev
 import torch
 from torch import nn
 from torch_geometric.datasets import QM9
