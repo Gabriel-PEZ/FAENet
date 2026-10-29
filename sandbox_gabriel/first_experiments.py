@@ -1,9 +1,8 @@
 # %%
 from pathlib import Path
 
-import mendeleev
 import torch
-from torch import nn
+from mendeleev import element
 from torch_geometric.datasets import QM9
 
 print(Path.cwd())
@@ -115,4 +114,71 @@ assert torch.isclose(D, D2).all().item() == True
 
 # %%
 
+# test embedding premier atome de la molécule
+z_0 = molecule.z[0].item() # = numéro atomique du premier atome de la molécule
+atome = element(z_0) # fonction de mendeleev pour récupérer les caractéristiques
+
+# %%
+
+unique_atomic_number = dataset.z.unique().tolist()
+
+groups = []
+periods = []
+for z in unique_atomic_number: 
+    groups.append(element(z).group_id)
+    periods.append(element(z).period)
+unique_groups = list(set(groups))
+unique_periods = list(set(periods))
+
+# table correspondance pour lignes de l'embedding
+atomic_numbers_to_idx = {k:v for k,v in zip(unique_atomic_number, range(len(unique_atomic_number)))}
+groups_to_idx = {k:v for k,v in zip(unique_groups, range(len(unique_groups)))}
+periods_to_idx = {k:v for k,v in zip(unique_periods, range(len(unique_periods)))}
+
+d = 128
+
+atomic_numbers_embedding = torch.nn.Embedding(
+    num_embeddings=len(unique_atomic_number),
+    embedding_dim=d
+)
+
+groups_embedding = torch.nn.Embedding(
+    num_embeddings=len(unique_groups),
+    embedding_dim=d
+)
+
+periods_embedding = torch.nn.Embedding(
+    num_embeddings=len(unique_periods),
+    embedding_dim=d
+)
+
+# %%
+
+# atome.metallic_radius, (H, C, O, N, F non métaux donc None pour metallic_radius)
+
+carac_phys_0 = torch.tensor(
+    [
+        atome.atomic_radius,
+        atome.atomic_volume,
+        atome.density,
+        atome.dipole_polarizability,
+        atome.electron_affinity,
+        atome.en_allen,
+        atome.vdw_radius,
+        atome.covalent_radius,
+        atome.ionenergies[1],
+        atome.ionenergies[2]
+
+    ]
+)
+
+atome_0_embedding_concat = torch.concat(
+    (
+        atomic_numbers_embedding.weight[atomic_numbers_to_idx[atome.atomic_number]],
+        groups_embedding.weight[groups_to_idx[atome.group_id]],
+        periods_embedding.weight[periods_to_idx[atome.period]],
+        carac_phys_0
+    )
+)
+# %%
 
