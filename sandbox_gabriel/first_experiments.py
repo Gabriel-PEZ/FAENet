@@ -2,6 +2,7 @@
 from pathlib import Path
 
 import torch
+from torch import nn
 from torch_geometric.datasets import QM9
 
 print(Path.cwd())
@@ -54,10 +55,6 @@ print(molecule.y) # regression targets
 
 # %%
 
-X = molecule.pos
-
-# %%
-
 def rho1_inv(X_global, t, U_star):
     """
     Fonction pour exprimer X du repère global au repère local 
@@ -88,7 +85,17 @@ def SFA(X, k=None):
         U_star = U[torch.randint(0, 7, size=(1,)).item()]
     return U_star
 
+def adjacency_matrix(X_local, cutoff):
+
+    D = torch.cdist(X_local, X_local)
+    A = (D < cutoff).float()
+    for i in range(X_local.shape[0]):
+        A[i,i] = 0.0
+    edge_index = torch.nonzero(A).t() # same shape que dans QM9 (2 x E)
+    return A, D, edge_index
+
 # %%
+X = molecule.pos
 t = X.mean(axis=0)
 U_star1 = SFA(X,0)
 U_star2 = SFA(X,5)
@@ -98,30 +105,13 @@ X_global = rho1(X_local, t, U_star1)
 assert torch.isclose(X, X_global).all().item() == True # pour voir si rho1 * rho1_inv = Id
 
 # %%
-
-nb_atomes = X_local.shape[0]
-D = torch.zeros(size=(nb_atomes, nb_atomes))
-for i in range(nb_atomes):
-    for j in range(nb_atomes):
-        D[i,j] = torch.linalg.vector_norm(X_local[i] - X_local[j])
-
-def build_D(X_local):
-    nb_atomes = X_local.shape[0]
-    D = torch.zeros(size=(nb_atomes, nb_atomes))
-    for i in range(nb_atomes):
-        for j in range(nb_atomes):
-            D[i,j] = torch.linalg.vector_norm(X_local[i] - X_local[j])
-    return D
-
 X_local2 = rho1_inv(X, t, U_star2)
+A, D, edge_index = adjacency_matrix(X_local, cutoff=6)
+_, D2, _ = adjacency_matrix(X_local2, cutoff=6)
 
-D1 = build_D(X_local)
-D2 = build_D(X_local2)
-# test pour vérifier si dans un repère différent les distances en changent pas
-assert torch.isclose(D1, D2).all().item() == True
-assert torch.isclose(D1, D1.t()).all().item() == True
+# test pour vérifier que la distance est la même entre 2 repères différents
+assert torch.isclose(D, D2).all().item() == True
 
 # %%
-D = torch.cdist(X_local, X_local) # plus efficace que build_D
-# %%
+
 
