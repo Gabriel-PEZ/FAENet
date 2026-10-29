@@ -118,8 +118,6 @@ assert torch.isclose(D, D2).all().item() == True
 z_0 = molecule.z[0].item() # = numéro atomique du premier atome de la molécule
 atome = element(z_0) # fonction de mendeleev pour récupérer les caractéristiques
 
-# %%
-
 unique_atomic_number = dataset.z.unique().tolist()
 
 groups = []
@@ -166,17 +164,18 @@ carac_phys_0 = torch.tensor(
         atome.en_allen,
         atome.vdw_radius,
         atome.covalent_radius,
+        atome.metallic_radius if atome.metallic_radius is not None else 0.0,
         atome.ionenergies[1],
-        atome.ionenergies[2]
+        atome.ionenergies.get(2, 0.0) # gère le cas hydrogène
 
     ]
 )
 
 atome_0_embedding_concat = torch.concat(
     (
-        atomic_numbers_embedding.weight[atomic_numbers_to_idx[atome.atomic_number]],
-        groups_embedding.weight[groups_to_idx[atome.group_id]],
-        periods_embedding.weight[periods_to_idx[atome.period]],
+        atomic_numbers_embedding(torch.tensor(atomic_numbers_to_idx[atome.atomic_number])),
+        groups_embedding(torch.tensor(groups_to_idx[atome.group_id])),
+        periods_embedding(torch.tensor(periods_to_idx[atome.period])),
         carac_phys_0
     )
 )
