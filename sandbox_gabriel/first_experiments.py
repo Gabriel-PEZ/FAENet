@@ -114,11 +114,40 @@ assert torch.isclose(D, D2).all().item() == True
 
 # %%
 
-# test embedding premier atome de la molécule
+unique_atomic_number = dataset.z.unique().tolist() # numéros atomiques uniques de QM9
+
 z_0 = molecule.z[0].item() # = numéro atomique du premier atome de la molécule
 atome = element(z_0) # fonction de mendeleev pour récupérer les caractéristiques
 
-unique_atomic_number = dataset.z.unique().tolist()
+properties_atomes = torch.zeros(len(unique_atomic_number), 10) 
+for i, num in enumerate(unique_atomic_number):
+    atome = element(num)
+    properties_atomes[i, :] = torch.tensor([
+        atome.atomic_radius,
+        atome.atomic_volume,
+        atome.density,
+        atome.dipole_polarizability,
+        atome.electron_affinity,
+        atome.en_allen,
+        atome.vdw_radius,
+        atome.covalent_radius,
+        atome.ionenergies[1],
+        atome.ionenergies.get(2, torch.nan) # gère le cas hydrogène
+    ])
+
+mu_atomes = torch.nanmean(properties_atomes, dim=0) # permet de compute la moyenne sans prendre en compte des nan
+sigma_atomes = torch.sqrt(
+    torch.nanmean((properties_atomes - mu_atomes)**2, dim=0)
+)
+
+properties_atomes_imputed = torch.where(
+    torch.isnan(properties_atomes),
+    mu_atomes,
+    properties_atomes
+) # on remplace les nan par la moyenne de la catégorie correspondante
+
+properties_atomes_scaled = (properties_atomes_imputed - mu_atomes)/sigma_atomes**2
+# scaled pour éviter les différences d'échelles dans le MLP 
 
 groups = []
 periods = []
@@ -152,64 +181,13 @@ periods_embedding = torch.nn.Embedding(
 
 # %%
 
-# atome.metallic_radius, (H, C, O, N, F non métaux donc None pour metallic_radius)
-
-carac_phys_0 = torch.tensor(
-    [
-        atome.atomic_radius,
-        atome.atomic_volume,
-        atome.density,
-        atome.dipole_polarizability,
-        atome.electron_affinity,
-        atome.en_allen,
-        atome.vdw_radius,
-        atome.covalent_radius,
-        # atome.metallic_radius if atome.metallic_radius is not None else 0.0,
-        atome.ionenergies[1],
-        atome.ionenergies.get(2, 0.0) # gère le cas hydrogène
-
-    ]
-)
-
 atome_0_embedding_concat = torch.concat(
     (
         atomic_numbers_embedding(torch.tensor(atomic_numbers_to_idx[atome.atomic_number])),
         groups_embedding(torch.tensor(groups_to_idx[atome.group_id])),
         periods_embedding(torch.tensor(periods_to_idx[atome.period])),
-        carac_phys_0
+        properties_atomes_scaled[atomic_numbers_to_idx[atome.atomic_number],:]
     )
 )
-# %%
-
-
-# matrice des caractéristiques de l'ensemble des atomes disponibles dans QM9 
-
-print(unique_atomic_number)
-print(len(carac_phys_0))
 
 # %%
-
-statistics_atomes = torch.zeros(len(unique_atomic_number), len(carac_phys_0)) 
-for i, num in enumerate(unique_atomic_number):
-    atome = element(num)
-    statistics_atomes[i, :] = torch.tensor([
-        atome.atomic_radius,
-        atome.atomic_volume,
-        atome.density,
-        atome.dipole_polarizability,
-        atome.electron_affinity,
-        atome.en_allen,
-        atome.vdw_radius,
-        atome.covalent_radius,
-        atome.ionenergies[1],
-        atome.ionenergies.get(2, torch.nan) # gère le cas hydrogène
-    ])
-
-mu_atomes = torch.nanmean(statistics_atomes, dim=0)# permet de compute la moyenne sans prendre en compte des nan
-sigma_atomes = torch.sqrt(
-    torch.nanmean((statistics_atomes - mu_atomes)**2, dim=0)
-)
-
-# %% 
-
-
