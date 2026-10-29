@@ -55,39 +55,7 @@ print(molecule.y) # regression targets
 # %%
 
 X = molecule.pos
-t = X.mean(axis=0)
-X_c = X - t
-print(X,"\n")
-print(t, "\n")
-print(X_c, "\n")
 
-XctXc = X_c.t() @ X_c
-print(XctXc)
-
-# %%
-
-eigenvalues, eigenvectors = torch.linalg.eigh(XctXc) # utilise eigh (matrice symétrique) au lieu eig (matrice quelconque)
-print(eigenvalues)
-print(eigenvectors)
-print(
-    torch.isclose(
-        XctXc @ eigenvectors[:,0], eigenvalues[0] * eigenvectors[:,0]
-    )
-)
-
-# %% Construction de F 
-
-signs = torch.cartesian_prod(
-    torch.tensor([-1.0, 1.0]),
-    torch.tensor([-1.0, 1.0]),
-    torch.tensor([-1.0, 1.0])
-)
-print(signs.shape)
-print(eigenvectors.shape)
-signs = signs.unsqueeze(1)
-print(signs.shape)
-U = signs * eigenvectors
-U_star = U[torch.randint(0, 7, size=(1,)).item()]
 # %%
 
 def rho1_inv(X_global, t, U_star):
@@ -102,7 +70,7 @@ def rho1(X_local, t, U_star):
     """
     return X_local@ U_star.t() + t
 
-def SFA(X):
+def SFA(X, k=None):
 
     t = X.mean(axis=0)
     X_c = X - t 
@@ -114,18 +82,46 @@ def SFA(X):
         torch.tensor([-1.0, 1.0])
     ).unsqueeze(1)
     U = signs * eigenvectors
-    U_star = U[torch.randint(0, 7, size=(1,)).item()]
+    if k is not None:
+        U_star = U[k]
+    else:
+        U_star = U[torch.randint(0, 7, size=(1,)).item()]
     return U_star
 
-    
+# %%
+t = X.mean(axis=0)
+U_star1 = SFA(X,0)
+U_star2 = SFA(X,5)
+
+X_local = rho1_inv(X, t, U_star1)
+X_global = rho1(X_local, t, U_star1)
+assert torch.isclose(X, X_global).all().item() == True # pour voir si rho1 * rho1_inv = Id
+
 # %%
 
-X_local = rho1_inv(X, t, U_star)
-X_global = rho1(X_local, t, U_star)
-assert torch.isclose(X, X_global).all().item() == True 
+nb_atomes = X_local.shape[0]
+D = torch.zeros(size=(nb_atomes, nb_atomes))
+for i in range(nb_atomes):
+    for j in range(nb_atomes):
+        D[i,j] = torch.linalg.vector_norm(X_local[i] - X_local[j])
+
+def build_D(X_local):
+    nb_atomes = X_local.shape[0]
+    D = torch.zeros(size=(nb_atomes, nb_atomes))
+    for i in range(nb_atomes):
+        for j in range(nb_atomes):
+            D[i,j] = torch.linalg.vector_norm(X_local[i] - X_local[j])
+    return D
+
+X_local2 = rho1_inv(X, t, U_star2)
+
+D1 = build_D(X_local)
+D2 = build_D(X_local2)
+# test pour vérifier si dans un repère différent les distances en changent pas
+assert torch.isclose(D1, D2).all().item() == True
+assert torch.isclose(D1, D1.t()).all().item() == True
 
 # %%
-
-U_star_test = SFA(X)
-assert U_star_test in U
+D = torch.cdist(X_local, X_local) # plus efficace que build_D
 # %%
+
