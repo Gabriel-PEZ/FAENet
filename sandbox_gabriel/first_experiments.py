@@ -164,7 +164,7 @@ carac_phys_0 = torch.tensor(
         atome.en_allen,
         atome.vdw_radius,
         atome.covalent_radius,
-        atome.metallic_radius if atome.metallic_radius is not None else 0.0,
+        # atome.metallic_radius if atome.metallic_radius is not None else 0.0,
         atome.ionenergies[1],
         atome.ionenergies.get(2, 0.0) # gère le cas hydrogène
 
@@ -180,4 +180,36 @@ atome_0_embedding_concat = torch.concat(
     )
 )
 # %%
+
+
+# matrice des caractéristiques de l'ensemble des atomes disponibles dans QM9 
+
+print(unique_atomic_number)
+print(len(carac_phys_0))
+
+# %%
+
+statistics_atomes = torch.zeros(len(unique_atomic_number), len(carac_phys_0)) 
+for i, num in enumerate(unique_atomic_number):
+    atome = element(num)
+    statistics_atomes[i, :] = torch.tensor([
+        atome.atomic_radius,
+        atome.atomic_volume,
+        atome.density,
+        atome.dipole_polarizability,
+        atome.electron_affinity,
+        atome.en_allen,
+        atome.vdw_radius,
+        atome.covalent_radius,
+        atome.ionenergies[1],
+        atome.ionenergies.get(2, torch.nan) # gère le cas hydrogène
+    ])
+
+mu_atomes = torch.nanmean(statistics_atomes, dim=0)# permet de compute la moyenne sans prendre en compte des nan
+sigma_atomes = torch.sqrt(
+    torch.nanmean((statistics_atomes - mu_atomes)**2, dim=0)
+)
+
+# %% 
+
 
