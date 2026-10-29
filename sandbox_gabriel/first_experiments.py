@@ -2,6 +2,7 @@
 from pathlib import Path
 
 import torch
+import torch.nn as nn 
 from mendeleev import element
 from torch_geometric.datasets import QM9
 
@@ -113,14 +114,26 @@ _, D2, _ = adjacency_matrix(X_local2, cutoff=6)
 assert torch.isclose(D, D2).all().item() == True
 
 # %%
+"""
+Construction du tenseur des propriétés scalés pour tous les atomes du dataset
+"""
+# obtenir les numéros atomiques, groupes et périodes uniques 
+unique_atomic_numbers = sorted(dataset.z.unique().tolist()) # numéros atomiques uniques de QM9
+groups = []
+periods = []
+for z in unique_atomic_numbers: 
+    groups.append(element(z).group_id)
+    periods.append(element(z).period)
+unique_groups = sorted(set(groups))
+unique_periods = sorted(set(periods))
 
-unique_atomic_number = dataset.z.unique().tolist() # numéros atomiques uniques de QM9
+# dico pour le lookup embedding
+atomic_numbers_to_idx = {k:v for k,v in zip(unique_atomic_numbers, range(len(unique_atomic_numbers)))}
+groups_to_idx = {k:v for k,v in zip(unique_groups, range(len(unique_groups)))}
+periods_to_idx = {k:v for k,v in zip(unique_periods, range(len(unique_periods)))}
 
-z_0 = molecule.z[0].item() # = numéro atomique du premier atome de la molécule
-atome = element(z_0) # fonction de mendeleev pour récupérer les caractéristiques
-
-properties_atomes = torch.zeros(len(unique_atomic_number), 10) 
-for i, num in enumerate(unique_atomic_number):
+properties_atomes = torch.zeros(len(unique_atomic_numbers), 10) 
+for i, num in enumerate(unique_atomic_numbers):
     atome = element(num)
     properties_atomes[i, :] = torch.tensor([
         atome.atomic_radius,
@@ -140,32 +153,25 @@ sigma_atomes = torch.sqrt(
     torch.nanmean((properties_atomes - mu_atomes)**2, dim=0)
 )
 
+# on remplace les nan par la moyenne de la catégorie correspondante
 properties_atomes_imputed = torch.where(
     torch.isnan(properties_atomes),
     mu_atomes,
     properties_atomes
-) # on remplace les nan par la moyenne de la catégorie correspondante
+) 
 
-properties_atomes_scaled = (properties_atomes_imputed - mu_atomes)/sigma_atomes**2
 # scaled pour éviter les différences d'échelles dans le MLP 
+properties_atomes_scaled = (properties_atomes_imputed - mu_atomes)/sigma_atomes
 
-groups = []
-periods = []
-for z in unique_atomic_number: 
-    groups.append(element(z).group_id)
-    periods.append(element(z).period)
-unique_groups = list(set(groups))
-unique_periods = list(set(periods))
+# %%
 
-# table correspondance pour lignes de l'embedding
-atomic_numbers_to_idx = {k:v for k,v in zip(unique_atomic_number, range(len(unique_atomic_number)))}
-groups_to_idx = {k:v for k,v in zip(unique_groups, range(len(unique_groups)))}
-periods_to_idx = {k:v for k,v in zip(unique_periods, range(len(unique_periods)))}
-
+"""
+Embeddings
+"""
 d = 128
 
 atomic_numbers_embedding = torch.nn.Embedding(
-    num_embeddings=len(unique_atomic_number),
+    num_embeddings=len(unique_atomic_numbers),
     embedding_dim=d
 )
 
@@ -181,13 +187,115 @@ periods_embedding = torch.nn.Embedding(
 
 # %%
 
+z_0 = molecule.z[0].item() # = numéro atomique du premier atome de la molécule
+atome_0 = element(z_0) # fonction de mendeleev pour récupérer les caractéristiques
+
 atome_0_embedding_concat = torch.concat(
     (
-        atomic_numbers_embedding(torch.tensor(atomic_numbers_to_idx[atome.atomic_number])),
-        groups_embedding(torch.tensor(groups_to_idx[atome.group_id])),
-        periods_embedding(torch.tensor(periods_to_idx[atome.period])),
-        properties_atomes_scaled[atomic_numbers_to_idx[atome.atomic_number],:]
+        atomic_numbers_embedding(torch.tensor(atomic_numbers_to_idx[atome_0.atomic_number])),
+        groups_embedding(torch.tensor(groups_to_idx[atome_0.group_id])),
+        periods_embedding(torch.tensor(periods_to_idx[atome_0.period])),
+        properties_atomes_scaled[atomic_numbers_to_idx[atome_0.atomic_number],:]
     )
 )
+
+
+# %%
+
+class MoleculeEmbedding(nn.Module):
+
+    def __init__(self, embedding_dim, hidden_dim, ouput_dim):
+        super().__init__()
+        self.embedding_dim = embedding_dim
+        self.atomic_numbers_embedding = nn.Embedding(
+            num_embeddings=len(unique_atomic_numbers),
+            embedding_dim=embedding_dim
+
+        )
+        self.groups_embedding = torch.nn.Embedding(
+            num_embeddings=len(unique_groups),
+            embedding_dim=embedding_dim
+        )
+
+        self.periods_embedding = torch.nn.Embedding(
+            num_embeddings=len(unique_periods),
+            embedding_dim=embedding_dim
+        )
+        
+        self.mlp = nn.Sequential(
+            nn.Linear(3 * embedding_dim + 10, hidden_dim), 
+            nn.SiLU(),
+            nn.Linear(hidden_dim, ouput_dim),
+            nn.SiLU()
+        )
+
+    def forward(self, molecule):
+        atomic_numbers = molecule.z.tolist()
+        atome_embeddings = []
+        for atomic_number in atomic_numbers:
+            atome = element(atomic_number)
+            atome_embedding = torch.concat(
+                (
+                    self.atomic_numbers_embedding(torch.tensor(atomic_numbers_to_idx[atome.atomic_number])),
+                    self.groups_embedding(torch.tensor(groups_to_idx[atome.group_id])),
+                    self.periods_embedding(torch.tensor(periods_to_idx[atome.period])),
+                    properties_atomes_scaled[atomic_numbers_to_idx[atome.atomic_number],:]
+                )
+            )
+
+            atome_embeddings.append(atome_embedding)
+        V = torch.stack(atome_embeddings)
+        H = self.mlp(V)
+        return H
+
+
+testME = MoleculeEmbedding(
+    embedding_dim=128,
+    hidden_dim=400,
+    ouput_dim=400
+)
+
+# %%
+
+V = testME(molecule)
+
+# %%
+
+V.shape
+
+
+# %%
+
+
+def get_molecule_embedding(molecule, embedding_dim): 
+
+    atomic_numbers = molecule.z.tolist()
+    nb_atomes = len(atomic_numbers)
+    molecule_embedding = torch.zeros(nb_atomes, 3 * embedding_dim + 10)
+    for i,z in enumerate(atomic_numbers):
+        atome = element(z)
+        atome_embedding = torch.concat(
+            (
+                atomic_numbers_embedding(torch.tensor(atomic_numbers_to_idx[atome.atomic_number])),
+                groups_embedding(torch.tensor(groups_to_idx[atome.group_id])),
+                periods_embedding(torch.tensor(periods_to_idx[atome.period])),
+                properties_atomes_scaled[atomic_numbers_to_idx[atome.atomic_number],:]
+            )
+        )
+        molecule_embedding[i,:] = atome_embedding
+
+    return molecule_embedding
+
+# %%
+
+
+molecule_embedding = get_molecule_embedding(molecule, embedding_dim=128)
+
+# %%
+
+atomic_numbers = molecule.z.tolist()
+nb_atomes = len(atomic_numbers)
+for i,z in enumerate(atomic_numbers):
+    atome = element(z)
 
 # %%
