@@ -228,3 +228,47 @@ V = testME(molecule)
 print(V.shape)
 
 # %%
+
+"""
+Embedding des arêtes basés sur le graphe d'adjacence construit avec X_local après SFA
+"""
+
+# distance entre tous les atomes reliés via la matrice d'adjacence
+R = X_local[edge_index[0]] - X_local[edge_index[1]]
+
+# norme de toutes ces distances
+d_rbf = torch.norm(R, dim=1)
+
+# centre des RBF gaussiennes
+rbf_gaussian_centers = torch.linspace(0, 6, 100)
+sigma = rbf_gaussian_centers[1] - rbf_gaussian_centers[0]
+
+RBF = torch.exp(-(1/(2 * sigma**2)) * (d_rbf.unsqueeze(1) - rbf_gaussian_centers)**2)
+# 132 * 103 (132 arêtes et pour chaque arête vecteur de R3 pour position relative + 100RBF)
+concat_R_RBF = torch.concat([R, RBF], dim=1)
+
+# %%
+
+class EdgeEmbedding(nn.Module):
+
+    def __init__(self):
+
+        super().__init__()
+        self.mlp = nn.Sequential(
+            nn.Linear(103, 400),
+            nn.SiLU(),
+            nn.Linear(400, 400),
+            nn.SiLU()
+        )
+
+    def forward(self, concat_R_RBF):
+
+        return self.mlp(concat_R_RBF)
+
+
+edge_embedding = EdgeEmbedding()
+# %%
+
+print(edge_embedding(concat_R_RBF).shape)
+
+# %%
