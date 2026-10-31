@@ -11,7 +11,7 @@ class MoleculeEmbedding(nn.Module):
             self, 
             embedding_dim, 
             hidden_dim, 
-            ouput_dim,
+            output_dim,
             atomic_numbers_to_indices,
             properties_atomes_scaled,
         ):
@@ -37,7 +37,7 @@ class MoleculeEmbedding(nn.Module):
         self.mlp = nn.Sequential(
             nn.Linear(3 * embedding_dim + 10, hidden_dim), 
             nn.SiLU(),
-            nn.Linear(hidden_dim, ouput_dim),
+            nn.Linear(hidden_dim, output_dim),
             nn.SiLU()
         )
 

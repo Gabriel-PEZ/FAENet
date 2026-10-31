@@ -3,6 +3,7 @@ from pathlib import Path
 
 import torch
 from mendeleev import element
+from torch import nn
 from torch_geometric.datasets import QM9
 
 print(Path.cwd())
@@ -134,20 +135,47 @@ properties_atomes_scaled = (properties_atomes_imputed - mu_atomes)/sigma_atomes
 molecule_embedding = MoleculeEmbedding(
     embedding_dim=128,
     hidden_dim=400,
-    ouput_dim=400,
+    output_dim=400,
     atomic_numbers_to_indices=atomic_numbers_to_indices,
     properties_atomes_scaled=properties_atomes_scaled
 )
 
 edge_embedding = EdgeEmbedding(
-    hidden_dim=400,
-    output_dim=400,
+    hidden_dim=480,
+    output_dim=480,
     nb_gaussians=100,
     cutoff=6
 )
 # %%
-
-print(molecule_embedding(molecule).shape)
-print(edge_embedding(X_local, edge_index).shape)
+H0 = molecule_embedding(molecule)
+E = edge_embedding(X_local, edge_index)
+print(H0.shape)
+print(E.shape)
 
 # %%
+
+
+edge_index.t()
+# %%
+
+
+H0[0]
+
+# %%
+
+
+filter_inputs = torch.concat(
+    [E, H0[edge_index[0]], H0[edge_index[1]]], dim=1
+)
+
+filter_mlp = nn.Sequential(
+    nn.Linear(1280, 400),
+    nn.SiLU()
+)
+
+
+filters = filter_mlp(filter_inputs)
+
+# %%
+
+
