@@ -129,7 +129,11 @@ properties_atomes_imputed = torch.where(
 
 # scaled pour éviter les différences d'échelles dans le MLP 
 properties_atomes_scaled = (properties_atomes_imputed - mu_atomes)/sigma_atomes
+len(properties_atomes_scaled)
 
+# %%
+
+properties_atomes_scaled.shape[1]
 
 # %% 
 
