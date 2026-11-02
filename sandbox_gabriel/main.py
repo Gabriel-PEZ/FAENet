@@ -5,6 +5,7 @@ import torch
 from mendeleev import element
 from torch import nn
 from torch_geometric.datasets import QM9
+from torch_geometric.nn import GraphNorm
 
 print(Path.cwd())
 
@@ -147,6 +148,7 @@ edge_embedding = EdgeEmbedding(
     cutoff=6
 )
 # %%
+
 H0 = molecule_embedding(molecule)
 E = edge_embedding(X_local, edge_index)
 print(H0.shape)
@@ -154,15 +156,9 @@ print(E.shape)
 
 # %%
 
-
-edge_index.t()
-# %%
-
-
-H0[0]
-
-# %%
-
+# f_{ij} = \sigma(MLP((e_{ij} | h_i^{(l)} | h_j^{(l)})))
+# e_{ij} = embedding des arêtes du graphe d'adjacence
+# h_i^{(l)} = embedding du noeud i à la couche l
 
 filter_inputs = torch.concat(
     [E, H0[edge_index[0]], H0[edge_index[1]]], dim=1
@@ -178,4 +174,80 @@ filters = filter_mlp(filter_inputs)
 
 # %%
 
+print(edge_index.t())
+print(filters)
 
+# %%
+
+# m_{j -> i} = h_j \odot f_{ij}
+
+(H0[edge_index[1]] * filters)
+
+# %%
+
+M = torch.zeros_like(H0)
+# on additionne les messages le long des lignes et dans notre convention receveur = edge_index[0]
+M.index_add_(dim=0, index=edge_index[0], source=(H0[edge_index[1]] * filters))
+
+
+print(M)
+
+# %%
+# %%
+
+message_mlp = nn.Sequential(
+    nn.Linear(400, 400),
+    nn.SiLU(),
+)
+
+
+H1 = H0 + message_mlp(M)
+GraphNorm = nn.BatchNorm1d(400, momentum=False)
+
+# %%
+
+# GraphNorm on normalise toutes les features
+H1 - H1.mean(dim=0)
+# %%
+
+H1.std(dim=0)
+# %%
+H1_norm = (H1 - H1.mean(dim=0))/torch.clamp(H1.std(dim=0), 1e-8)
+H1_norm
+# %%
+
+
+GraphNorm = nn.BatchNorm1d(400, momentum=False)
+GraphNorm(H1)
+# %%
+
+class InteractionBlock(nn.Module):
+
+    def __init__(self, edge_dim, node_dim):
+        super().__init__()
+
+        self.filter_mlp = nn.Sequential(
+            nn.Linear(edge_dim + 2 * node_dim, node_dim),
+            nn.SiLU(),
+        )
+
+        self.message_mlp = nn.Sequential(
+            nn.Linear(node_dim, node_dim),
+            nn.SiLU(),
+        )
+
+        self.graph_norm = GraphNorm(node_dim)
+
+    def forward(self, H_curr, E, edge_index):
+
+        filter_inputs = torch.concat(
+            [E, H_curr[edge_index[0]], H_curr[edge_index[1]]], dim=1
+        )
+        filters = self.filter_mlp(filter_inputs)
+        M = torch.zeros_like(H_curr)
+        # on additionne les messages le long des lignes et dans notre convention receveur = edge_index[0]
+        M.index_add_(dim=0, index=edge_index[0], source=(H_curr[edge_index[1]] * filters))
+        return H_curr + self.message_mlp(self.graph_norm(M))
+
+    
+# %%
