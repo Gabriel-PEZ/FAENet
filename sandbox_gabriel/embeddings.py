@@ -9,35 +9,35 @@ class MoleculeEmbedding(nn.Module):
 
     def __init__(
             self, 
-            embedding_dim, 
+            atom_embedding_dim, 
             hidden_dim, 
-            output_dim,
+            node_dim,
             atomic_numbers_to_indices,
             properties_atomes_scaled,
         ):
 
         super().__init__()
-        self.embedding_dim = embedding_dim
+        self.embedding_dim = atom_embedding_dim
         indices = atomic_numbers_to_indices.values()
         self.atomic_numbers_embedding = nn.Embedding(
             num_embeddings=len({val[0] for val in indices}),
-            embedding_dim=embedding_dim
+            embedding_dim=atom_embedding_dim
         )
 
         self.groups_embedding = torch.nn.Embedding(
             num_embeddings=len({val[1] for val in indices}),
-            embedding_dim=embedding_dim
+            embedding_dim=atom_embedding_dim
         )
 
         self.periods_embedding = torch.nn.Embedding(
             num_embeddings=len({val[2] for val in indices}),
-            embedding_dim=embedding_dim
+            embedding_dim=atom_embedding_dim
         )
         
         self.mlp = nn.Sequential(
-            nn.Linear(3 * embedding_dim + 10, hidden_dim), 
+            nn.Linear(3 * atom_embedding_dim + 10, hidden_dim), 
             nn.SiLU(),
-            nn.Linear(hidden_dim, output_dim),
+            nn.Linear(hidden_dim, node_dim),
             nn.SiLU()
         )
 
@@ -72,13 +72,13 @@ class MoleculeEmbedding(nn.Module):
 
 class EdgeEmbedding(nn.Module):
 
-    def __init__(self, hidden_dim, output_dim, nb_gaussians, cutoff):
+    def __init__(self, hidden_dim, edge_dim, nb_gaussians, cutoff):
 
         super().__init__()
         self.mlp = nn.Sequential(
             nn.Linear(nb_gaussians + 3, hidden_dim),
             nn.SiLU(),
-            nn.Linear(hidden_dim, output_dim),
+            nn.Linear(hidden_dim, edge_dim),
             nn.SiLU()
         )
 
