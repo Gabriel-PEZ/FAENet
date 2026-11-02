@@ -114,6 +114,87 @@ _, D2, _ = adjacency_matrix(X_local2, cutoff=6)
 assert torch.isclose(D, D2).all().item() == True
 
 # %%
+dataset.z
+unique_z = torch.unique(dataset.z)
+z_to_idx = {z:idx for idx,z in enumerate(unique_z.tolist())} # dict
+
+d = 16
+emb = nn.Embedding(len(z_to_idx), d)
+# chaine -> z de la molecule into idxs, into embedding
+# mais du coup on doit utiliser le dict avec un tenseur
+# mieux vaut utiliser un tenseur
+# -1.0 ne peut pas être un indice
+# on veut que les valeurs de z soit les positions
+z_to_idx_tensor_cst = torch.full((max(unique_z)+1,), fill_value = -1, dtype=torch.long)
+idx_tensor = torch.arange(len(unique_z))
+z_to_idx_tensor_cst[unique_z] = idx_tensor
+
+# verifie si l'embedding marche
+emb_z = emb(z_to_idx_tensor_cst[molecule.z])
+len(molecule.z)
+c = (molecule.z == 1)
+# les atomes d'hydrogene ont bien le même embedding
+torch.isclose(emb_z[c][0],emb_z[c][1])
+
+element_z = element(unique_z.tolist())
+group_z = [a.group_id for a in element_z]
+period_z = [a.period for a in element_z]
+print(period_z)
+
+# %%
+# meme process pour period et group
+set_period_z = sorted(set(period_z))
+period_to_idx = torch.full((max(set_period_z) + 1,), -1, dtype=torch.long)
+period_to_idx[torch.tensor(set_period_z)] = torch.arange(len(set_period_z))
+
+set_group_z = sorted(set(group_z))
+group_to_idx = torch.full((max(set_group_z) + 1,), -1, dtype=torch.long)
+group_to_idx[torch.tensor(set_group_z)] = torch.arange(len(set_group_z))  
+
+class Embedding_h0(nn.Module):
+    def __init__(self, z_to_idx_tensor_cst, period_to_idx, group_to_idx, group_z, period_z, emb_dim, out_dim):
+        super().__init__()
+        self.register_buffer("z_to_idx", z_to_idx_tensor_cst)                           # [max_z + 1]
+        self.register_buffer("period_of", period_to_idx[torch.tensor(period_z)])    # [K]
+        self.register_buffer("group_of",  group_to_idx[torch.tensor(group_z)])  
+
+        emb_in_z = len(period_z) # une ligne par élement
+        emb_in_period = len(set(period_z)) # une ligne par period
+        emb_in_group = len(set(group_z)) # une ligne par groupe
+
+        self.emb_z = nn.Embedding(emb_in_z, emb_dim)
+        self.emb_period = nn.Embedding(emb_in_period, emb_dim)
+        self.emb_group = nn.Embedding(emb_in_group, emb_dim)
+
+        self.mlp = nn.Sequential(
+            nn.Linear(3*emb_dim, out_dim),
+            nn.SiLU(),
+            nn.Linear(out_dim, out_dim),
+            nn.SiLU(),
+        )
+
+    def forward(self, z):
+        # le z est une liste de numéro atomique
+        # pour emb_z on transforme en indice et on passe
+        # pour le reste on veut que la valeur unique en indice
+        idx = self.z_to_idx[z]
+        h_0 = torch.cat(
+            [
+                self.emb_z(idx),
+                self.emb_period(self.period_of[idx]),
+                self.emb_group(self.group_of[idx])
+            ]
+        , dim = 1)
+        h_0 = self.mlp(h_0)
+        return h_0
+
+m = Embedding_h0(z_to_idx_tensor_cst, period_to_idx, group_to_idx,
+                 group_z, period_z, 16, 400)
+
+H0 = m(molecule.z)
+H0.size()
+
+# %%
 """
 Construction du tenseur des propriétés scalés pour tous les atomes du dataset
 """
@@ -229,7 +310,6 @@ print(V.shape)
 
 # %%
 def relative_distance(X_local, edge_index):
-    ri = X_local[edge_index[0]]
-    rj = X_local[edge_index[1]]
-    return rj - ri
+    i, j = edge_index
+    return X_local[i] - X_local[j] 
 rij = relative_distance(X_local, edge_index)
