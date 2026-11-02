@@ -96,12 +96,21 @@ len(properties_atomes_scaled)
 
 # %%
 
-properties_atomes_scaled.shape[1]
-
-# %% 
-
-
-
-
+faenet = FAENet(
+    atom_embedding_dim=128,
+    hidden_dim_node=400,
+    hidden_dim_edge=480,
+    hidden_dim_output_block=200,
+    node_dim=400,
+    edge_dim=480,
+    atomic_numbers_to_indices=atomic_numbers_to_indices,
+    properties_atomes_scaled=properties_atomes_scaled,
+    nb_gaussians_rbf=100,
+    cutoff=6.0,
+    num_iteration_block=5,
+    jump_connection=True,
+)
 # %%
 
+faenet(molecule)
+# %%
