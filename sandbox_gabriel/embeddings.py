@@ -44,27 +44,22 @@ class MoleculeEmbedding(nn.Module):
         self.atomic_numbers_to_indices = atomic_numbers_to_indices
         self.register_buffer("properties_atomes_scaled", properties_atomes_scaled)
 
+        atomic_numbers_to_indices_tensor = torch.zeros(max(atomic_numbers_to_indices.keys())+1, 3, dtype=int)
+        for key, value in atomic_numbers_to_indices.items():
+            # tenseur avec lignes de 0 et sinon [Z, G, P] pour la molécule de numéro atomique i
+            # ex hydrogene numéro atomique 1, ligne = 1 [Z_h, G_h, P_h]
+            atomic_numbers_to_indices_tensor[key, :] = torch.tensor(value)
+        self.register_buffer("atomic_numbers_to_indices_tensor", atomic_numbers_to_indices_tensor)
+
 
     def forward(self, molecule):
-        atomic_numbers = molecule.z.tolist()
-        atome_embeddings = []
-        for atomic_number in atomic_numbers:
-
-            idx_Z = self.atomic_numbers_to_indices[atomic_number][0]
-            idx_G = self.atomic_numbers_to_indices[atomic_number][1]
-            idx_P = self.atomic_numbers_to_indices[atomic_number][2]
-
-            atome_embedding = torch.concat(
-                (
-                    self.atomic_numbers_embedding(torch.tensor(idx_Z)),
-                    self.groups_embedding(torch.tensor(idx_G)),
-                    self.periods_embedding(torch.tensor(idx_P)),
-                    self.properties_atomes_scaled[idx_Z,:]
-                )
-            )
-
-            atome_embeddings.append(atome_embedding)
-        V = torch.stack(atome_embeddings)
+    
+        zgp_atomes = self.atomic_numbers_to_indices_tensor[molecule.z] # chaque ligne = Z_i, G_i, P_i de l'atome i pour la molécule
+        Z_embedded = self.atomic_numbers_embedding(zgp_atomes[:,0])
+        G_embedded = self.groups_embedding(zgp_atomes[:,1])
+        P_embedded = self.periods_embedding(zgp_atomes[:,2])
+        properties_embedded = self.properties_atomes_scaled[zgp_atomes[:,0]]
+        V = torch.concat([Z_embedded, G_embedded, P_embedded, properties_embedded], dim=1)
         H = self.mlp(V)
         return H
 
