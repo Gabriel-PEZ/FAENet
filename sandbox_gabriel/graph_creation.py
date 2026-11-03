@@ -1,6 +1,7 @@
 # %%
 
 import torch
+from torch_geometric.nn import global_add_pool, global_mean_pool
 
 # %%
 
@@ -29,23 +30,41 @@ def rho2(Y_local, U_star, output_type):
     else:
         raise ValueError("Unknown output_type")
 
-def SFA(X, k=None):
+def SFA(X, batch_indices=None, k=None, generator=None):
 
-    t = X.mean(axis=0)
-    X_c = X - t 
-    Sigma = X_c.t() @ X_c
+    """
+    X : molecule.pos (position x,y,z de tous les atomes de la molecule) ou 
+        batch.pos (position x,y,z de tous les atomes de toutes les molécules du batch) 
+    """
+
+    if batch_indices is None:
+        t = X.mean(axis=0)
+        X_c = X - t 
+        Sigma = X_c.t() @ X_c
+    else:
+        t = global_mean_pool(x=X, batch=batch_indices)
+        X_c = X - t[batch_indices]
+        # permet de calculer l'ensemble des produits x_i x_i^T pour ensuite les sommer et obtenir Sigma
+        # ie X^T X = sum_i x_i x_i^T 
+        flat_block_product = (X_c.unsqueeze(2) @ X_c.unsqueeze(1)).reshape(-1,9) 
+        Sigma = global_add_pool(x=flat_block_product, batch=batch_indices).reshape(-1,3,3)
+
     _, eigenvectors = torch.linalg.eigh(Sigma)
     signs = torch.cartesian_prod(
         torch.tensor([-1.0, 1.0], device=X.device),
         torch.tensor([-1.0, 1.0], device=X.device),
         torch.tensor([-1.0, 1.0], device=X.device)
     ).unsqueeze(1)
-    U = signs * eigenvectors
+    U = signs.unsqueeze(1) * eigenvectors.unsqueeze(0)
+
+    B = U.shape[1]
     if k is not None:
         U_star = U[k]
     else:
-        U_star = U[torch.randint(0, 8, size=(1,)).item()]
-    return U_star
+        k_batch = torch.randint(0, 8, size=(B,), generator=generator).to(U.device)
+        U_star = U[k_batch, torch.arange(B, device=U.device)]
+
+    return U_star.squeeze(0) if batch_indices is None else U_star
 
 def adjacency_matrix(X_local, cutoff):
 
