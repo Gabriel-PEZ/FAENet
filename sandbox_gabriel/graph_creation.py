@@ -19,7 +19,8 @@ def rho1(X_local, t, U_star):
 def rho2(Y_local, U_star, output_type):
     """
     Fonction pour exprimer la sortie du MLP du repère local au repère global
-    (Equivariant pour les forces et invariant pour les énergies)
+    (Equivariant pour les forces et invariant pour les énergies) 
+    [pas utiliser pour QM9]
     """
     if output_type == "invariant":
         return Y_local
@@ -35,9 +36,9 @@ def SFA(X, k=None):
     Sigma = X_c.t() @ X_c
     _, eigenvectors = torch.linalg.eigh(Sigma)
     signs = torch.cartesian_prod(
-        torch.tensor([-1.0, 1.0]),
-        torch.tensor([-1.0, 1.0]),
-        torch.tensor([-1.0, 1.0])
+        torch.tensor([-1.0, 1.0], device=X.device),
+        torch.tensor([-1.0, 1.0], device=X.device),
+        torch.tensor([-1.0, 1.0], device=X.device)
     ).unsqueeze(1)
     U = signs * eigenvectors
     if k is not None:
