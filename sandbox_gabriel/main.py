@@ -137,13 +137,9 @@ dataset_train = dataset_shuffled[:size_train]
 dataset_val = dataset_shuffled[size_train:size_test]
 dataset_test = dataset_shuffled[size_test:]
 
-target_train = dataset_train.y[:,idx_regression_target]
-target_val = dataset_val.y[:,idx_regression_target]
-target_test = dataset_test.y[:,idx_regression_target]
-
+target_train = dataset_train.y[:,idx_regression_target].to(device)
 mu_target_train = target_train.mean()
 std_target_train = target_train.std()
-target_train_scaled = (target_train - mu_target_train)/std_target_train
 
 train_loader = DataLoader(dataset_train, batch_size=64, shuffle=True)
 val_loader = DataLoader(dataset_val, batch_size=64, shuffle=False)
@@ -170,7 +166,7 @@ optimizer = torch.optim.AdamW(
     faenet.parameters(),
     lr=1e-3
 )
-sfa_generator = torch.Generator().manual_seed(2003)
+train_generator = torch.Generator().manual_seed(2003)
 num_epochs = 1
 
 faenet.train()
@@ -179,8 +175,10 @@ for epoch in range(num_epochs):
 
         optimizer.zero_grad()
         batch = batch.to(device)
-        y_true = batch.y[:, idx_regression_target:idx_regression_target+1]
-        _, y_pred = faenet(batch, sfa_generator=sfa_generator)
+        y_true = (
+            batch.y[:, idx_regression_target:idx_regression_target+1] - mu_target_train
+        ) / std_target_train
+        _, y_pred = faenet(batch, sfa_generator=train_generator)
 
         # check de sécurité pour éviter broadcasting dans la loss
         assert y_true.shape == y_pred.shape 
@@ -192,4 +190,33 @@ for epoch in range(num_epochs):
         if batch_idx % 100 == 0:
             print(f"Batch {batch_idx}: MSE = {loss.item():.6f}")
     
+# %%
+
+faenet.eval()
+
+val_mae = 0.0
+n_samples = 0
+
+val_generator = torch.Generator().manual_seed(42)
+
+with torch.no_grad():
+    for batch in val_loader:
+        batch = batch.to(device)
+
+        y_true = batch.y[:, idx_regression_target:idx_regression_target+1]
+
+        _, y_pred_scaled = faenet(batch, sfa_generator=val_generator)
+        y_pred = mu_target_train + std_target_train * y_pred_scaled
+
+        assert y_true.shape == y_pred.shape
+
+        val_mae += torch.abs(y_pred - y_true).sum().item()
+        n_samples += len(y_true)
+
+print(f"Validation MAE : {val_mae / n_samples:.6f}")
+
+# %%
+
+
+
 # %%
