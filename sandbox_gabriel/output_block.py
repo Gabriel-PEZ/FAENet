@@ -2,7 +2,7 @@
 
 import torch
 from torch import nn
-
+from torch_geometric.nn import global_add_pool
 
 # %%
 class OutputBlock(nn.Module):
@@ -31,7 +31,7 @@ class OutputBlock(nn.Module):
         )
 
 
-    def forward(self, H_jump, H_last):
+    def forward(self, H_jump, H_last, batch_indices=None):
         """
         Si on utilise jumping connections, H = concaténation des vecteurs produits à 
         l'issu des InteractionBlock. 
@@ -39,4 +39,4 @@ class OutputBlock(nn.Module):
 
         Y = self.mlp(H_jump) # une prédiction d'énergie par atome 
         weights = self.weight_mlp(H_last) # poids qui dépendent uniquement de la dernière couche comme dans le papier 
-        return Y, torch.sum(Y * weights)
+        return Y, global_add_pool(x=Y * weights, batch=batch_indices)
