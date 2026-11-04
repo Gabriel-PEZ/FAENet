@@ -23,7 +23,7 @@ class InteractionBlock(nn.Module):
 
         self.graph_norm = GraphNorm(node_dim)
 
-    def forward(self, H_curr, E, edge_index):
+    def forward(self, H_curr, E, edge_index, batch_indices=None):
 
         filter_inputs = torch.concat(
             [E, H_curr[edge_index[0]], H_curr[edge_index[1]]], dim=1
@@ -32,4 +32,4 @@ class InteractionBlock(nn.Module):
         M = torch.zeros_like(H_curr)
         # on additionne les messages le long des lignes et dans notre convention receveur = edge_index[0]
         M.index_add_(dim=0, index=edge_index[0], source=(H_curr[edge_index[1]] * filters))
-        return H_curr + self.message_mlp(self.graph_norm(M))
+        return H_curr + self.message_mlp(self.graph_norm(M, batch=batch_indices))
