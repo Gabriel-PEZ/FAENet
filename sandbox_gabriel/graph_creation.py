@@ -5,17 +5,34 @@ from torch_geometric.nn import global_add_pool, global_mean_pool
 
 # %%
 
-def rho1_inv(X_global, t, U_star):
+def rho1_inv(X_global, t, U_star, batch_indices=None):
     """
     Fonction pour exprimer X du repère global au repère local 
     """
-    return (X_global - t) @ U_star
+    if batch_indices is None:
+        return (X_global - t) @ U_star
 
-def rho1(X_local, t, U_star):
+    else:
+        X_c = X_global - t[batch_indices]
+        return torch.bmm(
+            X_c.unsqueeze(1),
+            U_star[batch_indices]
+        ).squeeze(1)
+    
+
+def rho1(X_local, t, U_star, batch_indices=None):
     """
     Fonction pour exprimer X du repère local au repère global 
     """
-    return X_local@ U_star.t() + t
+    if batch_indices is None:
+        return X_local@ U_star.t() + t
+
+    else:
+        return torch.bmm(
+            X_local.unsqueeze(1),
+            U_star[batch_indices].transpose(1, 2)
+        ).squeeze(1) + t[batch_indices]
+
 
 def rho2(Y_local, U_star, output_type):
     """
@@ -66,11 +83,15 @@ def SFA(X, batch_indices=None, k=None, generator=None):
 
     return U_star.squeeze(0) if batch_indices is None else U_star
 
-def adjacency_matrix(X_local, cutoff):
+def adjacency_matrix(X_local, cutoff, batch_indices=None):
 
     D = torch.cdist(X_local, X_local)
-    A = (D < cutoff).float()
-    for i in range(X_local.shape[0]):
-        A[i,i] = 0.0
+    if batch_indices is None:
+        A = (D < cutoff).fill_diagonal_(False)
+    else:
+        # matrice par bloc pour grouper les atomes par molécule
+        M = (batch_indices.unsqueeze(0) == batch_indices.unsqueeze(1))
+        A = ((D < cutoff) & M).fill_diagonal_(False)
+    
     edge_index = torch.nonzero(A).t() # same shape que dans QM9 (2 x E)
     return A, D, edge_index
