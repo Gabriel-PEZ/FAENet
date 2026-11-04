@@ -2,7 +2,7 @@
 
 import torch 
 from torch import nn
-
+from torch_geometric.nn import global_mean_pool
 from embeddings import EdgeEmbedding, MoleculeEmbedding
 from interaction_block import InteractionBlock
 from output_block import OutputBlock
@@ -67,26 +67,31 @@ class FAENet(nn.Module):
             node_dim=node_dim
         )
 
-    def forward(self, molecule):
+    def forward(self, molecule, sfa_generator=None):
 
+        batch_indices = getattr(molecule, "batch", None)
         X_global = molecule.pos
-        U_star = SFA(X_global)
-        X_local = rho1_inv(X_global, X_global.mean(axis=0), U_star)
-        _, _, edge_index = adjacency_matrix(X_local, cutoff=self.cutoff)
+        U_star = SFA(X_global, batch_indices=batch_indices, generator=sfa_generator)
+        if batch_indices is None:
+            t = X_global.mean(axis=0)
+        else:
+            t = global_mean_pool(x=X_global, batch=batch_indices)
+        X_local = rho1_inv(X_global, t, U_star, batch_indices)
+        _, _, edge_index = adjacency_matrix(X_local, self.cutoff, batch_indices)
         
-        H = self.molecule_embedding(molecule) # on récupère le H0 de tous les atomes de la molécule
+        H = self.molecule_embedding(molecule) # H0 de tous les atomes de la molécule ou du batch
         E = self.edge_embedding(X_local, edge_index) # embedding des arêtes
 
         if self.jump_connection:
             H_jump_list = []
 
         for interaction_block in self.list_interaction_blocks:
-            H = interaction_block(H, E, edge_index)
+            H = interaction_block(H, E, edge_index, batch_indices)
             if self.jump_connection:
                 H_jump_list.append(H)
 
         if self.jump_connection:
             H_jump = torch.concat(H_jump_list, dim=1)
-            return self.output_block(H_jump, H)
+            return self.output_block(H_jump, H, batch_indices)
         else: 
-            return self.output_block(H, H)
+            return self.output_block(H, H, batch_indices)
