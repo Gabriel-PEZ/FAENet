@@ -34,7 +34,8 @@ class OutputBlock(nn.Module):
     def forward(self, H_jump, H_last, batch_indices=None):
         """
         Si on utilise jumping connections, H = concaténation des vecteurs produits à 
-        l'issu des InteractionBlock. 
+        l'issu des InteractionBlock. Sinon H_jump = H_last.
+        H_last utilisé uniquement pour les poids.
         """
 
         Y = self.mlp(H_jump) # une prédiction d'énergie par atome 
