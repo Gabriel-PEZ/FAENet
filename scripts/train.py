@@ -1,0 +1,140 @@
+# %%
+from pathlib import Path
+
+import torch
+from torch import nn
+from torch_geometric.datasets import QM9
+from torch_geometric.loader import DataLoader
+
+print(Path.cwd())
+
+from faenet.atomic_features import build_atomic_features
+from faenet.faenet import FAENet
+
+# %%
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print(device)
+dataset = QM9(root="../data/qm9")
+
+# %%
+
+atomic_numbers_to_indices, properties_atomes_scaled = build_atomic_features(dataset)
+
+# %%
+
+faenet = FAENet(
+    atom_embedding_dim=128,
+    hidden_dim_node=400,
+    hidden_dim_edge=480,
+    hidden_dim_output_block=200,
+    node_dim=400,
+    edge_dim=480,
+    atomic_numbers_to_indices=atomic_numbers_to_indices,
+    properties_atomes_scaled=properties_atomes_scaled,
+    nb_gaussians_rbf=100,
+    cutoff=6.0,
+    num_iteration_block=5,
+    jump_connection=True,
+).to(device)
+
+# %%
+
+generator = torch.Generator().manual_seed(42)
+idx_perm = torch.randperm(len(dataset), generator=generator)
+dataset_shuffled = dataset[idx_perm]
+
+# Plusieurs target de régression dans y. 
+# 0 = moment dipolaire \mu
+idx_regression_target = 0
+
+size_train = int(0.85 * len(dataset))
+size_val = int(0.05 * len(dataset))
+size_test = size_train + size_val 
+
+dataset_train = dataset_shuffled[:size_train]
+dataset_val = dataset_shuffled[size_train:size_test]
+dataset_test = dataset_shuffled[size_test:]
+
+target_train = dataset_train.y[:,idx_regression_target].to(device)
+mu_target_train = target_train.mean()
+std_target_train = target_train.std()
+
+train_loader = DataLoader(dataset_train, batch_size=64, shuffle=True)
+val_loader = DataLoader(dataset_val, batch_size=64, shuffle=False)
+test_loader = DataLoader(dataset_test, batch_size=64, shuffle=False)
+
+# A savoir : comme les molécules n'ont pas le même nombre d'atomes, on peut pas stocker les molécules
+# sous la forme d'un batch de taille B x N x 3 ou N = nombre d'atomes et 3 pour x,y,z.
+# A la place, on crée un graphe composé de B sous-graphes, où chaque graphe est déconnecté des 
+# autres graphes 
+
+# %%
+
+it = iter(train_loader)
+batch = next(it)
+print(batch.batch) # permet de voir quel atome appartient à quelle molécule
+print(batch.batch.shape) # nombre d'atomes dans le batch
+print(batch.ptr) # donne les indices pour savoir quand commence et finit une molécule dans batch.batch
+print(batch.pos) # positions x,y,z de chaque atome
+
+# %%
+
+criterion = nn.MSELoss()
+optimizer = torch.optim.AdamW(
+    faenet.parameters(),
+    lr=1e-3
+)
+train_generator = torch.Generator().manual_seed(2003)
+num_epochs = 1
+
+faenet.train()
+for epoch in range(num_epochs):
+    for batch_idx, batch in enumerate(train_loader):
+
+        optimizer.zero_grad()
+        batch = batch.to(device)
+        y_true = (
+            batch.y[:, idx_regression_target:idx_regression_target+1] - mu_target_train
+        ) / std_target_train
+        _, y_pred = faenet(batch, sfa_generator=train_generator)
+
+        # check de sécurité pour éviter broadcasting dans la loss
+        assert y_true.shape == y_pred.shape 
+
+        loss = criterion(y_pred, y_true)
+        loss.backward()
+        optimizer.step()
+
+        if batch_idx % 100 == 0:
+            print(f"Batch {batch_idx}: MSE = {loss.item():.6f}")
+    
+# %%
+
+faenet.eval()
+
+val_mae = 0.0
+n_samples = 0
+
+val_generator = torch.Generator().manual_seed(42)
+
+with torch.no_grad():
+    for batch in val_loader:
+        batch = batch.to(device)
+
+        y_true = batch.y[:, idx_regression_target:idx_regression_target+1]
+
+        _, y_pred_scaled = faenet(batch, sfa_generator=val_generator)
+        y_pred = mu_target_train + std_target_train * y_pred_scaled
+
+        assert y_true.shape == y_pred.shape
+
+        val_mae += torch.abs(y_pred - y_true).sum().item()
+        n_samples += len(y_true)
+
+print(f"Validation MAE : {val_mae / n_samples:.6f}")
+
+# %%
+
+
+

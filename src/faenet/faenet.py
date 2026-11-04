@@ -3,10 +3,10 @@
 import torch 
 from torch import nn
 from torch_geometric.nn import global_mean_pool
-from embeddings import EdgeEmbedding, MoleculeEmbedding
-from interaction_block import InteractionBlock
-from output_block import OutputBlock
-from graph_creation import SFA, rho1_inv, adjacency_matrix
+from .embeddings import EdgeEmbedding, MoleculeEmbedding
+from .interaction_block import InteractionBlock
+from .output_block import OutputBlock
+from .graph_creation import SFA, rho1_inv, adjacency_matrix
 
 # %%
 

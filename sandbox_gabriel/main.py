@@ -12,7 +12,7 @@ print(Path.cwd())
 
 from embeddings import EdgeEmbedding, MoleculeEmbedding
 from graph_creation import SFA, rho1, rho1_inv, adjacency_matrix
-from faenet import FAENet
+from faenet_experiement import FAENet
 
 # %%
 
