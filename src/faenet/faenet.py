@@ -68,8 +68,8 @@ class FAENet(nn.Module):
             node_dim=node_dim
         )
 
-        if frame_averaging not in ("sfa", "full"):
-            raise ValueError("frame_averaging must be 'sfa' or 'full'")
+        if frame_averaging not in ("sfa", "full", "none"):
+            raise ValueError("frame_averaging must be 'sfa', 'full' or 'none'")
 
         self.frame_averaging = frame_averaging
 
@@ -77,15 +77,20 @@ class FAENet(nn.Module):
 
         batch_indices = getattr(molecule, "batch", None)
         X_global = molecule.pos
-        U_star = SFA(X_global, batch_indices=batch_indices, generator=sfa_generator, full=(self.frame_averaging == "full")) # false par défaut
 
-        if self.frame_averaging == "sfa":
-            U_star = U_star.unsqueeze(0)
+        if self.frame_averaging == "none":
+            U_star = [None]
 
-        if batch_indices is None:
-            t = X_global.mean(axis=0)
         else:
-            t = global_mean_pool(x=X_global, batch=batch_indices)
+            U_star = SFA(X_global, batch_indices=batch_indices, generator=sfa_generator, full=(self.frame_averaging == "full")) # false par défaut
+
+            if self.frame_averaging == "sfa":
+                U_star = U_star.unsqueeze(0)
+
+            if batch_indices is None:
+                t = X_global.mean(axis=0)
+            else:
+                t = global_mean_pool(x=X_global, batch=batch_indices)
         
         H0 = self.molecule_embedding(molecule) # H0 de tous les atomes de la molécule ou du batch
 
@@ -96,7 +101,11 @@ class FAENet(nn.Module):
 
             H = H0
 
-            X_local = rho1_inv(X_global, t, U, batch_indices)
+            if U is None:
+                X_local = X_global
+            else:
+                X_local = rho1_inv(X_global, t, U, batch_indices)
+
             _, _, edge_index = adjacency_matrix(X_local, self.cutoff, batch_indices)
             E = self.edge_embedding(X_local, edge_index) # embedding des arêtes
 
