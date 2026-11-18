@@ -47,7 +47,7 @@ def rho2(Y_local, U_star, output_type):
     else:
         raise ValueError("Unknown output_type")
 
-def SFA(X, batch_indices=None, k=None, generator=None):
+def SFA(X, batch_indices=None, k=None, generator=None, full=False):
 
     """
     X : molecule.pos (position x,y,z de tous les atomes de la molecule) ou 
@@ -59,7 +59,7 @@ def SFA(X, batch_indices=None, k=None, generator=None):
         X_c = X - t 
         Sigma = X_c.t() @ X_c
     else:
-        t = global_mean_pool(x=X, batch=batch_indices)
+        t = global_mean_pool(x=X, batch=batch_indices) # t (nb de molecules, 3)
         X_c = X - t[batch_indices]
         # permet de calculer l'ensemble des produits x_i x_i^T pour ensuite les sommer et obtenir Sigma
         # ie X^T X = sum_i x_i x_i^T 
@@ -72,14 +72,18 @@ def SFA(X, batch_indices=None, k=None, generator=None):
         torch.tensor([-1.0, 1.0], device=X.device),
         torch.tensor([-1.0, 1.0], device=X.device)
     ).unsqueeze(1)
-    U = signs.unsqueeze(1) * eigenvectors.unsqueeze(0)
+    U = signs.unsqueeze(1) * eigenvectors.unsqueeze(0) # (8, B, 3, 3) U[indice_repere, indice_molecule, :, :]
 
     B = U.shape[1]
+
+    if full:
+        return U.squeeze(1) if batch_indices is None else U # (8, 3, 3) si X n'est pas un batch 
+    
     if k is not None:
         U_star = U[k]
     else:
         k_batch = torch.randint(0, 8, size=(B,), generator=generator).to(U.device)
-        U_star = U[k_batch, torch.arange(B, device=U.device)]
+        U_star = U[k_batch, torch.arange(B, device=U.device)] # ex U[2,0] U[3,1] 2e frame pour mol 0 et 3e frame pour mol 1
 
     return U_star.squeeze(0) if batch_indices is None else U_star
 

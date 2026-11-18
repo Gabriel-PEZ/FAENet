@@ -26,6 +26,7 @@ class FAENet(nn.Module):
             cutoff,
             num_iteration_block,
             jump_connection,
+            frame_averaging="sfa",
 
         ):
         """
@@ -67,31 +68,56 @@ class FAENet(nn.Module):
             node_dim=node_dim
         )
 
+        if frame_averaging not in ("sfa", "full"):
+            raise ValueError("frame_averaging must be 'sfa' or 'full'")
+
+        self.frame_averaging = frame_averaging
+
     def forward(self, molecule, sfa_generator=None):
 
         batch_indices = getattr(molecule, "batch", None)
         X_global = molecule.pos
-        U_star = SFA(X_global, batch_indices=batch_indices, generator=sfa_generator)
+        U_star = SFA(X_global, batch_indices=batch_indices, generator=sfa_generator, full=(self.frame_averaging == "full")) # false par défaut
+
+        if self.frame_averaging == "sfa":
+            U_star = U_star.unsqueeze(0)
+
         if batch_indices is None:
             t = X_global.mean(axis=0)
         else:
             t = global_mean_pool(x=X_global, batch=batch_indices)
-        X_local = rho1_inv(X_global, t, U_star, batch_indices)
-        _, _, edge_index = adjacency_matrix(X_local, self.cutoff, batch_indices)
         
-        H = self.molecule_embedding(molecule) # H0 de tous les atomes de la molécule ou du batch
-        E = self.edge_embedding(X_local, edge_index) # embedding des arêtes
+        H0 = self.molecule_embedding(molecule) # H0 de tous les atomes de la molécule ou du batch
 
-        if self.jump_connection:
-            H_jump_list = []
+        Y_atoms = []
+        Y_graphs = []
 
-        for interaction_block in self.list_interaction_blocks:
-            H = interaction_block(H, E, edge_index, batch_indices)
+        for U in U_star:
+
+            H = H0
+
+            X_local = rho1_inv(X_global, t, U, batch_indices)
+            _, _, edge_index = adjacency_matrix(X_local, self.cutoff, batch_indices)
+            E = self.edge_embedding(X_local, edge_index) # embedding des arêtes
+
             if self.jump_connection:
-                H_jump_list.append(H)
+                H_jump_list = []
 
-        if self.jump_connection:
-            H_jump = torch.concat(H_jump_list, dim=1)
-            return self.output_block(H_jump, H, batch_indices)
-        else: 
-            return self.output_block(H, H, batch_indices)
+            for interaction_block in self.list_interaction_blocks:
+                H = interaction_block(H, E, edge_index, batch_indices)
+                if self.jump_connection:
+                    H_jump_list.append(H)
+
+            if self.jump_connection:
+                H_jump = torch.concat(H_jump_list, dim=1)
+                y_atoms, y_graph = self.output_block(H_jump, H, batch_indices)
+            else: 
+                y_atoms, y_graph = self.output_block(H, H, batch_indices)
+
+            Y_atoms.append(y_atoms)
+            Y_graphs.append(y_graph)
+
+        return (
+            torch.stack(Y_atoms).mean(dim=0),
+            torch.stack(Y_graphs).mean(dim=0)
+        )
