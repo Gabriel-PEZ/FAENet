@@ -7,7 +7,7 @@ from torch_geometric.datasets import QM9
 from torch_geometric.loader import DataLoader
 
 print(Path.cwd())
-
+  
 from faenet.atomic_features import build_atomic_features
 from faenet.faenet import FAENet
 
@@ -79,6 +79,8 @@ checkpoint_dir = Path("checkpoints") / (
     f"qm9_{idx_regression_target}_{faenet.frame_averaging}"
 )
 checkpoint_dir.mkdir(parents=True, exist_ok=True)
+
+# %%
 
 criterion = nn.MSELoss()
 optimizer = torch.optim.AdamW(faenet.parameters(), lr=1e-3)
@@ -171,6 +173,7 @@ for epoch in range(num_epochs):
 checkpoint = torch.load(checkpoint_dir / "best.pt", map_location=device, weights_only=True)
 faenet.load_state_dict(checkpoint["model_state_dict"])
 faenet.frame_averaging = checkpoint["frame_averaging"]
+# faenet.frame_averaging = "full" check l'effet du full fa en inférence
 faenet.eval()
 
 # norm du training
