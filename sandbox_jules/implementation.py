@@ -198,23 +198,41 @@ H0.size()
 """
 Construction du tenseur des propriétés scalés pour tous les atomes du dataset
 """
-# obtenir les numéros atomiques, groupes et périodes uniques 
-unique_atomic_numbers = sorted(dataset.z.unique().tolist()) # numéros atomiques uniques de QM9
-groups = []
-periods = []
-for z in unique_atomic_numbers: 
-    groups.append(element(z).group_id)
-    periods.append(element(z).period)
-unique_groups = sorted(set(groups))
-unique_periods = sorted(set(periods))
+unique_z_list = unique_z.tolist()
+template = torch.zeros((len(unique_z_list),10))
+# tenseur propriétés à concat embedding
+# on remplit
+for i,atom in enumerate(element(unique_z_list)):
+    pro_atom = torch.tensor([
+            atom.atomic_radius,
+            atom.atomic_volume,
+            atom.density,
+            atom.dipole_polarizability,
+            atom.electron_affinity,
+            atom.en_allen,
+            atom.vdw_radius,
+            atom.covalent_radius,
+            atom.ionenergies[1],
+            atom.ionenergies.get(2, torch.nan)]
+    )
+    template[i,:] = pro_atom
 
-# dico pour le lookup embedding
-atomic_numbers_to_idx = {k:v for k,v in zip(unique_atomic_numbers, range(len(unique_atomic_numbers)))}
-groups_to_idx = {k:v for k,v in zip(unique_groups, range(len(unique_groups)))}
-periods_to_idx = {k:v for k,v in zip(unique_periods, range(len(unique_periods)))}
+print(template)
 
-properties_atomes = torch.zeros(len(unique_atomic_numbers), 10) 
-for i, num in enumerate(unique_atomic_numbers):
+
+
+
+
+
+
+
+
+
+
+
+properties_atomes = torch.zeros(len(unique_z_list), 10)
+print(properties_atomes) 
+for i, num in enumerate(unique_z_list):
     atome = element(num)
     properties_atomes[i, :] = torch.tensor([
         atome.atomic_radius,
