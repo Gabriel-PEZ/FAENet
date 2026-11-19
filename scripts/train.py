@@ -85,7 +85,7 @@ optimizer = torch.optim.AdamW(faenet.parameters(), lr=1e-3)
 
 train_generator = torch.Generator().manual_seed(1977)
 
-num_epochs = 20  # First experiment
+num_epochs = 100  # First experiment
 best_val_mae = float("inf")
 
 # %% 
@@ -165,3 +165,42 @@ for epoch in range(num_epochs):
 
     if is_best:
         torch.save(checkpoint, checkpoint_dir / "best.pt")
+
+# %%
+
+checkpoint = torch.load(checkpoint_dir / "best.pt", map_location=device, weights_only=True)
+faenet.load_state_dict(checkpoint["model_state_dict"])
+faenet.frame_averaging = checkpoint["frame_averaging"]
+faenet.eval()
+
+# norm du training
+mu = checkpoint["target_mean"].to(device)
+std = checkpoint["target_std"].to(device)
+target_idx = checkpoint["target_idx"]
+
+test_generator = torch.Generator().manual_seed(1972)
+
+test_mae = 0.0
+n_samples = 0
+
+with torch.no_grad():
+    for batch in test_loader:
+        batch = batch.to(device)
+
+        _, y_pred_scaled = faenet(
+            batch, sfa_generator=test_generator
+        )
+
+        y_pred = mu + std * y_pred_scaled
+        y_true = batch.y[:, target_idx:target_idx + 1]
+
+        test_mae += (y_pred - y_true).abs().sum().item()
+        n_samples += y_true.shape[0]
+
+test_mae /= n_samples
+
+print(f"Best epoch: {checkpoint['epoch']}")
+print(f"Best Val MAE: {checkpoint['best_val_mae']:.6f}")
+print(f"Test MAE: {test_mae:.6f}")
+
+# %%
