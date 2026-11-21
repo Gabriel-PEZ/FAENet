@@ -12,7 +12,7 @@ device = torch.device("cpu")
 
 root = Path.cwd().resolve().parent 
 qm9 = root / "data" / "qm9"
-#dataset = QM9(root=qm9)
+dataset = QM9(root=qm9)
 checkpoint = root / "scripts" / "checkpoints" / "qm9_0_sfa" / "best.pt"
 
 # %%
@@ -87,18 +87,51 @@ def predict_pca_manual(mol, frames):
     fonction qui permet de faire des prédictions full FA avec un custom PCA
     '''
     #centroide
-    center = mol_test.pos.mean(dim=0)
+    center = mol.pos.mean(dim=0)
     # loop sur les frames pour calculer x_local
     pred_frames = []
     for frame in frames:
-        X_local = (mol_test.pos - center)@frame
+        X_local = (mol.pos - center)@frame
         # on crée la nouvelle molécule 
         mol_local = Data(z = mol.z, pos = X_local)
 
         y_atomes, y_graph = faenet(mol_local)
         pred_frames.append(y_atomes)
-    return pred_frames
+    return torch.stack(pred_frames)
 
 #%%
 frames = SFA(mol_test.pos, full = True)
-predict_pca_manual(mol_test, frames)
+predict_pca_manual(mol_test, frames).mean(dim = 0)
+
+A = Data(z=mol_test.z, pos=mol_test.pos)
+faenet.frame_averaging = "full"
+with torch.no_grad():
+    full_A, full_A_graph = faenet(A)
+
+faenet.frame_averaging = "none"
+frames_A = SFA(A.pos, full=True)
+manual_A = predict_pca_manual(A, frames_A)
+
+print(torch.isclose(full_A, manual_A, atol = 1e-4))
+
+#%%
+def add_two_molecules(A, B, direction, distance):
+    pos_A = A.pos
+    pos_B = B.pos
+    # partir du même point d'origine
+    pos_A_centered = pos_A - A.pos.mean(dim = 0)
+    pos_B_centered = pos_B - B.pos.mean(dim = 0)
+    # éloigner B de d
+    # on normalise pour avoir une distance de d (vecteur unitaire)
+    direction = direction / direction.norm()
+    pos_B_shiftfed = pos_B_centered + distance*direction
+    # assembler les molécules
+    mol_AB = Data(pos = torch.concat([pos_A_centered, pos_B_shiftfed]), z = torch.concat([A.z,B.z]))
+
+    # size N_A, N_B
+    distance_atomes = torch.cdist(pos_A_centered,pos_B_shiftfed)
+    distance_min = distance_atomes.min().item()
+    return mol_AB, distance_min
+
+
+#%%
