@@ -73,7 +73,7 @@ class FAENet(nn.Module):
 
         self.frame_averaging = frame_averaging
 
-    def forward(self, molecule, sfa_generator=None):
+    def forward(self, molecule, sfa_generator=None, return_frames=False):
 
         batch_indices = getattr(molecule, "batch", None)
         X_global = molecule.pos
@@ -126,7 +126,13 @@ class FAENet(nn.Module):
             Y_atoms.append(y_atoms)
             Y_graphs.append(y_graph)
 
+        Y_atoms = torch.stack(Y_atoms)
+        Y_graphs = torch.stack(Y_graphs)
+
+        if return_frames:
+            return Y_atoms, Y_graphs
+
         return (
-            torch.stack(Y_atoms).mean(dim=0),
-            torch.stack(Y_graphs).mean(dim=0)
+            Y_atoms.mean(dim=0),
+            Y_graphs.mean(dim=0)
         )
