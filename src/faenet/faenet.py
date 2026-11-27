@@ -27,6 +27,8 @@ class FAENet(nn.Module):
             num_iteration_block,
             jump_connection,
             frame_averaging="sfa",
+            use_weights=True,
+            xavier_init=False,
 
         ):
         """
@@ -65,7 +67,9 @@ class FAENet(nn.Module):
         self.output_block = OutputBlock(
             H_dim=H_dim, 
             hidden_dim=hidden_dim_output_block, 
-            node_dim=node_dim
+            node_dim=node_dim,
+            use_weights=use_weights,
+            xavier_init=xavier_init
         )
 
         if frame_averaging not in ("sfa", "full", "none"):
